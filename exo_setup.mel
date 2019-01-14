@@ -1,0 +1,16 @@
+global string $gShelfTopLevel;
+$currShelf = `tabLayout -q -selectTab $gShelfTopLevel`;
+$script = "from Exo import UI\nreload(UI)\nUI.baseUI.launchUI()";
+
+shelfButton -parent $currShelf
+            -enable 1
+            -visible 1
+            -manage 1
+            -width 34
+            -height 34
+            -image1 "pythonFamily.png"
+            -iol "EXO"
+            -annotation "Exo Tools"
+            -command $script
+            -stp "python"
+            -l "Exo Tools";
