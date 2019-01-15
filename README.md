@@ -9,3 +9,5 @@ HOW TO INSTALL
 3. Open Maya.
 4. Drag the "exo_setup.mel" file into your Maya scene.
 5. Click the button on your shelf that says "EXO" to launch the tool.
+
+Tested in Maya 2017, 2018.
