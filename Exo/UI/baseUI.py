@@ -13,7 +13,7 @@ class ExoWindow(MayaQWidgetDockableMixin, QtWidgets.QMainWindow):
         super(ExoWindow, self).__init__(parent = parent)
     
         #INFO
-        self.version_number = '1.0.0'
+        self.version_number = '1.1.0'
         self.exo_name = 'Exo Tools'
         self.setWindowTitle(self.exo_name)
         
@@ -22,33 +22,30 @@ class ExoWindow(MayaQWidgetDockableMixin, QtWidgets.QMainWindow):
         self.menuBar().addMenu(createBar)
         self.ctrl_name = 'Control'
         self.jig_name = 'Jiggle'
-        self.fkik_name = 'FK/IK Match'
+        self.ik_name = '3-Chain IK'
         
         createActions_list = []
         
-        act_ctrl = self.createAction(self.ctrl_name, 0)
+        act_ctrl = self.createAction(self.ctrl_name, 1)
         createActions_list.append(act_ctrl)
         
-        act_jig  = self.createAction(self.jig_name, 1)
+        act_jig  = self.createAction(self.jig_name, 2)
         createActions_list.append(act_jig)
         
-        act_fkik = self.createAction(self.fkik_name, 2)
-        ###
-        act_fkik.setVisible(False)
-        ###
-        createActions_list.append(act_fkik)
+        act_ik = self.createAction(self.ik_name, 3)
+        createActions_list.append(act_ik)
         
         createBar.addActionMany(createActions_list)
 
         self.about_name = 'About'
-        act_abt = self.createAction(self.about_name, 3)
+        act_abt = self.createAction(self.about_name, 0)
         self.menuBar().addAction(act_abt)
         
         #MAIN WIDGET
         mainWidget = QtWidgets.QWidget(self)
         self.setCentralWidget(mainWidget)
         
-        self.createMaster()
+        build.createMaster()
         
         self.exoList = self.createList()
         self.exoList.itemSelectionChanged.connect(self.changeOptions)
@@ -103,16 +100,6 @@ class ExoWindow(MayaQWidgetDockableMixin, QtWidgets.QMainWindow):
         '''Change options widget'''
         selCtrl = self.exoList.selectedItems()
         self.exoOptions.changeState(selCtrl)
-        
-    def createMaster(self):
-        '''Create a master Exo node if there is none'''
-        master_name = 'exo_master'
-        if not cmds.objExists(master_name):
-            build.null(master_name)
-            
-        cmds.select(clear = True)
-            
-        return master_name
         
     def refresh(self):
         '''Refresh exoList'''

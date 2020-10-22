@@ -30,10 +30,10 @@ class wdg_action(QtWidgets.QAction):
         '''
         Set value of self.actionType
         
-        0 Control Action
-        1 Jiggle Action
-        2 FK/IK Match Action
-        3 About Action
+        0 About Action
+        1 Control Action
+        2 Jiggle Action
+        3 IK Action
         '''
         self.actionType = value
         
@@ -47,12 +47,14 @@ class wdg_action(QtWidgets.QAction):
         
     def doAction(self):
         '''Call the action's respective function'''
-        if self.actionType == 0:
-            self.callCtrl()
-        elif self.actionType == 1:
-            self.callJiggle()
-        else:
-            self.callAbout()
+        action_switch = {
+            0: self.callAbout,
+            1: self.callCtrl,
+            2: self.callJiggle,
+            3: self.callIK
+        }
+        
+        action_switch[self.actionType]()
 
     def callCtrl(self):
         '''Make a control'''
@@ -62,6 +64,11 @@ class wdg_action(QtWidgets.QAction):
     def callJiggle(self):
         '''Make a jiggle'''
         build.buildJiggle()
+        self.mainWindow.refresh()
+        
+    def callIK(self):
+        '''Make an IK chain'''
+        build.buildIK()
         self.mainWindow.refresh()
             
     def callAbout(self):
@@ -129,17 +136,26 @@ class wdg_options(QtWidgets.QGroupBox):
         
     def changeState(self, selCtrl):
         '''Determine if the widget should be disabled'''
+        
         if selCtrl == []:
             self.currentCtrl = ''
             self.setEnabled(False)
         else:
-            self.currentCtrl = selCtrl[1].text()
+            type_text = selCtrl[0].text()
+            name_text = selCtrl[1].text()
+            self.currentCtrl = name_text
             self.setEnabled(True)
             
             #toggle enabled for bakeBtn
-            if selCtrl[0].text() == 'control':
+            if type_text == 'control':
+                cmds.select(self.currentCtrl, r = True)
                 self.bakeBtn.setEnabled(False)
             else:
+                select_dict = {
+                    'jiggle': 'hair',
+                    'ik': 'ikCtrl'
+                }
+                cmds.select('{0}_{1}'.format(self.currentCtrl, select_dict[type_text]), r = True)
                 self.bakeBtn.setEnabled(True)
                         
     def create_buttons(self):

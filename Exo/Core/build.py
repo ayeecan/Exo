@@ -1,8 +1,9 @@
-from maya import cmds, mel
+from maya import cmds, mel, OpenMaya
 
-from Exo.Core import util
+from Exo.Core import util, shapes
 
 reload(util)
+reload(shapes)
 
 def branding(ctrl, brand_label, brand_text = ''):
     '''Adds an attribute to a control to identify it as an Exo control'''
@@ -17,8 +18,8 @@ def branding(ctrl, brand_label, brand_text = ''):
     newAttr_name = '{0}.{1}'.format(ctrl_name, brand_label)
     return newAttr_name
     
-def brandJiggle(master_node, selectedCtrls):
-    '''An attribute to store selected controls for a jiggle'''
+def storeCtrls(master_node, selectedCtrls):
+    '''An attribute under the submaster control to store selected controls '''
     attr_label = 'controls_used'
     fullName = '{0}.{1}'.format(master_node, attr_label)
     
@@ -73,6 +74,24 @@ def ctrl(name, offset = False):
     
     return ctrl_node
     
+def ctrl_ik(name):
+    '''Make a control for an ik handle'''
+    new_name = '{0}_ikCtrl'.format(name)
+    
+    ik_node = shapes.cube(new_name)
+    ctrlLock(ik_node)
+    
+    return ik_node
+    
+def pivot(name):
+    '''Make a pivot control'''
+    new_name = '{0}_pivot'.format(name)
+    
+    pivot_node = shapes.plus(new_name)
+    ctrlLock(pivot_node)
+    
+    return pivot_node
+    
 def ctrlLock(ctrl):
     '''Lock and brand the control'''
     branding(ctrl, 'exo_control')
@@ -81,17 +100,6 @@ def ctrlLock(ctrl):
     util.lockCB(ctrl, custom_lock = lock_list)
     
     return ctrl
-    
-def pivot(name):
-    '''Make a pivot control'''
-    points = [(0.0, 1.0, 0.0), (0.0, -1.0, 0.0), (0.0, 0.0, 0.0), (-1.0, 0.0, 0.0), (1.0, 0.0, 0.0), (0.0, 0.0, 0.0), (0.0, 0.0, 1.0), (0.0, 0.0, -1.0)]
-    new_name = '{0}_pivot'.format(name)
-    
-    pivot_node = cmds.curve(n = new_name, p = points, d = 1)
-    
-    ctrlLock(pivot_node)
-    
-    return pivot_node
     
 def negative(name):
     '''Create a node that makes translation negative'''
@@ -118,6 +126,14 @@ def jointChain(names, positions):
     
     return jnt_list
     
+def constrainSelectedToJoints(names, positions, selection):
+    '''Create a joint chain and constrain selected controls to each respectful joint'''
+    jnt_list = jointChain(names, positions)
+    for i, jnt in enumerate(jnt_list):
+        cmds.orientConstraint(jnt, selection[i], mo = True)
+        
+    return jnt_list
+        
 def makeCurveDynamic(curve, name):
     '''
     Run nHair makeCurvesDynamic function and locate all the nodes it creates
@@ -154,21 +170,89 @@ def makeCurveDynamic(curve, name):
     
     return newName_fol, newName_folgrp, newName_curve, newName_curvegrp, newName_hair, newName_nuc
 
-def splineIK(name, startJnt, endJnt, curve):
+def makeIK(name, jntList, solve_type, curve = None):
     '''
-    Create an ik spline
+    Create an ik chain. The type of ik must be specified in the solve_type variable
     Returns both the handle and effector
     '''
-    handle, eff = cmds.ikHandle(n = '{0}_ikH'.format(name), startJoint = startJnt, endEffector = endJnt, curve = curve,
-                           sol = 'ikSplineSolver', ccv = False, roc = False, pcv = False, snc = True)
+    startJnt = jntList[0]
+    endJnt = jntList[-1]
+    
+    if curve is None:
+        handle, eff = cmds.ikHandle(n = '{0}_ikHandle'.format(name), startJoint = startJnt, endEffector = endJnt, sol = solve_type)
+    else:
+        handle, eff = cmds.ikHandle(n = '{0}_ikHandle'.format(name), startJoint = startJnt, endEffector = endJnt, curve = curve,
+                                    sol = solve_type, ccv = False, roc = False, pcv = False, snc = True)
                            
     eff_rename = cmds.rename(eff, '{0}_eff'.format(name))
     
-    return handle, eff_rename
+    if solve_type == 'ikRPsolver':
+        pv_node = makePV(name, jntList, handle)
+        return handle, eff_rename, pv_node
+    else:
+        return handle, eff_rename
+
+def makePV(name, jntList, handle):
+    '''Create a pole vector'''
+    new_name = '{0}_pv'.format(name)
+    pv_node = shapes.poly8(new_name)
+    ctrlLock(pv_node)
+    lock_list = ['rx', 'ry', 'rz']
+    util.lockCB(pv_node, custom_lock = lock_list)
+    
+    
+    startCoord = util.getCoords(jntList[0])[0]
+    midCoord   = util.getCoords(jntList[1])[0]
+    endCoord   = util.getCoords(jntList[2])[0]
+    posX, posY, posZ = pvMath(startCoord, midCoord, endCoord)
+    cmds.move(posX, posY, posZ, pv_node)
+    
+    cmds.poleVectorConstraint(pv_node, handle)
+    
+    return pv_node
+    
+def pvMath(start, mid, end):
+    '''
+    Finds where the pole vector should be.
+    Taken from Marco Giordano: https://vimeo.com/66015036
+    
+    pv_distance: how far from the joints should the pole vector be
+    Returns x y z coords individually
+    '''
+    pv_distance = 1
+    
+    startV = OpenMaya.MVector(start[0], start[1], start[2])
+    midV   = OpenMaya.MVector(mid[0] ,  mid[1],   mid[2])
+    endV   = OpenMaya.MVector(end[0] ,  end[1],   end[2])
+
+    startEnd = endV - startV
+    startMid = midV - startV
+
+    dotP = startMid * startEnd
+    proj = float(dotP) / float(startEnd.length())
+    startEndN = startEnd.normal()
+    projV = startEndN * proj
+
+    arrowV = startMid - projV
+    arrowV*= pv_distance
+    finalV = arrowV + midV
+    
+    return finalV.x, finalV.y, finalV.z
+
+def createMaster():
+    '''Create a master Exo node if there is none'''
+    master_name = 'exo_master'
+    if not cmds.objExists(master_name):
+        null(master_name)
+        
+    cmds.select(clear = True)
+        
+    return master_name
     
 def buildCtrl():
+    cur_sel = cmds.ls(sl = True)
     #selection of objects
-    master_ctrl = 'exo_master'
+    master_ctrl = createMaster()
     dummy_text = 'dummy'
     
     new_name = util.getUniqueName(util.setPrefix(dummy_text))
@@ -177,6 +261,7 @@ def buildCtrl():
     submaster_ctrl = null('{0}_master'.format(new_name), new_name, 'control', master = True)
     util.parentWithLocks(submaster_ctrl, master_ctrl)
     
+    #actual controller
     new_ctrl = ctrl(new_name)
     util.parentUnderHierarchy(new_ctrl, submaster_ctrl)
     util.unlockCB(new_ctrl, ['sx', 'sy', 'sz'])
@@ -195,26 +280,24 @@ def buildCtrl():
     new_offset = ctrl(new_name, offset = True)
     util.parentUnderHierarchy(new_offset, new_neg_offset)
         
+    if cur_sel != []:
+        cmds.matchTransform(new_ctrl, cur_sel)
+        util.autoSize(new_ctrl, cur_sel)
+        
     cmds.select(clear = True)
     
 def buildJiggle():
+    jiggle_text = 'jiggle'
+    solver_text = 'ikSplineSolver'
     with util.saveTime():
-        all_sel = util.getSelected()
+        all_sel = cmds.ls(sl = True)
         if len(all_sel) < 2:
             cmds.warning('Not enough controls selected')
             return
         
-        #a list of nice names and translations
-        name_list = util.listOfNames(all_sel, 'jiggle_')
-        coord_list = util.listOfPos(all_sel)
-        naming_standard = name_list[0]
+        name_list, coord_list, naming_standard = util.getNamesPos(all_sel, '{0}_'.format(jiggle_text))
 
-        #make the joints
-        jnt_list = jointChain(name_list, coord_list)
-        
-        #constrain the controls to their respective joints
-        for i, jnt in enumerate(jnt_list):
-            cmds.orientConstraint(jnt, all_sel[i], mo = True)
+        jnt_list = constrainSelectedToJoints(name_list, coord_list, all_sel)
         
         #make a dynamic curve
         source_curve = cmds.curve(n = '{0}_sourceCurve'.format(naming_standard), ep = coord_list)
@@ -222,7 +305,7 @@ def buildJiggle():
         fol_node, fol_grp, dyn_curve, dyn_grp, hair_node, nuc_node = makeCurveDynamic(source_curve, naming_standard)
             
         #ik spline the dynamic curve
-        handle, eff = splineIK(naming_standard, jnt_list[0], jnt_list[-1], dyn_curve)
+        handle, eff = makeIK(naming_standard, jnt_list, solver_text, dyn_curve)
         
         #make a new group for joints and dyn_grp
         move_grp = cmds.group(n = '{0}_moveGrp'.format(naming_standard), empty = True)
@@ -230,12 +313,50 @@ def buildJiggle():
         cmds.pointConstraint(all_sel[0], move_grp, mo = True)
         
         list_for_master = [hair_node, nuc_node, handle, move_grp, dyn_grp]
-        submaster_ctrl = null('{0}_master'.format(naming_standard), naming_standard, 'jiggle', master = True)
-        brandJiggle(submaster_ctrl, all_sel)
+        #submaster
+        submaster_ctrl = null('{0}_master'.format(naming_standard), naming_standard, jiggle_text, master = True)
+        storeCtrls(submaster_ctrl, all_sel)
         cmds.parent(list_for_master, submaster_ctrl)
         
-        master_ctrl = 'exo_master'
+        master_ctrl = createMaster()
         cmds.parent(submaster_ctrl, master_ctrl)
         
         cmds.select(clear = True)        
+    
+def buildIK():
+    ik_text = 'ik'
+    solver_text = 'ikRPsolver'
+    
+    all_sel = cmds.ls(sl = True)    
+    if len(all_sel) < 3:
+        cmds.warning('Please select 3 controls')
+        return
+        
+    name_list, coord_list, naming_standard = util.getNamesPos(all_sel, '{0}_'.format(ik_text))
+    
+    jnt_list = constrainSelectedToJoints(name_list, coord_list, all_sel)
+    jnt_start = jnt_list[0]
+    #the first joint will follow the position of the first selected control(to act as a parent relationship)
+    #but the selected controls will follow the rotation of the joints
+    cmds.pointConstraint(all_sel[0], jnt_start)
+    #make joints invisible
+    cmds.setAttr('{0}.visibility'.format(jnt_start), 0)
+    
+    handle, eff, pv_node = makeIK(naming_standard, jnt_list, solver_text)
+    #make handle invisible
+    cmds.setAttr('{0}.visibility'.format(handle), 0)
+    
+    handle_ctrl = ctrl_ik(naming_standard)
+    util.cons(handle_ctrl, handle)
+    
+    list_for_master = [pv_node, handle_ctrl, jnt_start, handle]
+    #submaster
+    submaster_ctrl = null('{0}_master'.format(naming_standard), naming_standard, ik_text, master = True)
+    storeCtrls(submaster_ctrl, all_sel)
+    cmds.parent(list_for_master, submaster_ctrl)
+    
+    master_ctrl = createMaster()
+    cmds.parent(submaster_ctrl, master_ctrl)
+    
+    cmds.select(clear = True)
     

@@ -1,12 +1,6 @@
 from maya import cmds
 from contextlib import contextmanager
 
-def getSelected():
-    '''List selected objects'''
-    selection = cmds.ls(sl = True)
-    
-    return selection
-    
 def getUniqueName(name, index = 0):
     '''Make the name unique'''
     validName = name if not index else '{0}{1}'.format(name, index)
@@ -107,6 +101,14 @@ def listOfNames(list, prefix):
         
     return name_list
     
+def getNamesPos(selection, prefix):
+    '''Shorthand for getting a list of names and positions'''
+    names = listOfNames(selection, prefix)
+    coords = listOfPos(selection)
+    first_name = names[0]
+    
+    return names, coords, first_name
+    
 def snap(obj_child, obj_parent):
     '''Match transformations of child to parent'''
     with tempUnlockCB(obj_child):
@@ -131,6 +133,46 @@ def cons(master, slave):
     cons_node = cmds.parentConstraint(master, slave)
     
     return cons_node
+
+def autoSize(obj_child, obj_parent, scaleBuffer = 0):
+    '''Scale child control to fit parent control'''
+    child_name = nameReformat(obj_child)
+    parent_name = nameReformat(obj_parent)
+    facX, facY, facZ = findScaleFactor(child_name, parent_name, scaleBuffer)
+    
+    child_x = cmds.getAttr('{0}.sx'.format(child_name))
+    child_y = cmds.getAttr('{0}.sy'.format(child_name))
+    child_z = cmds.getAttr('{0}.sz'.format(child_name))
+    newX    = child_x + facX
+    newY    = child_y + facY
+    newZ    = child_z + facZ
+
+    cmds.scale(newX, newY, newZ, child_name)
+
+def findScaleFactor(obj_child, obj_parent, buffer):
+    '''Find by how much to scale the child control to fit parent control'''
+    parent_bb      = cmds.exactWorldBoundingBox(obj_parent)
+    parent_x       = parent_bb[3] - parent_bb[0]
+    parent_y       = parent_bb[4] - parent_bb[1]
+    parent_z       = parent_bb[5] - parent_bb[2]
+    
+    child_bb       = cmds.exactWorldBoundingBox(obj_child)
+    child_x_check  = child_bb[3] - child_bb[0]
+    child_y_check  = child_bb[4] - child_bb[1]
+    child_z_check  = child_bb[5] - child_bb[2]
+    child_x        = 1 if child_x_check == 0 else child_x_check
+    child_y        = 1 if child_y_check == 0 else child_y_check
+    child_z        = 1 if child_z_check == 0 else child_z_check
+    
+    factorX_raw    = parent_x / child_x
+    factorY_raw    = parent_y / child_y
+    factorZ_raw    = parent_z / child_z
+    
+    factorX        = buffer + factorX_raw
+    factorY        = buffer + factorY_raw
+    factorZ        = buffer + factorZ_raw
+    
+    return factorX, factorY, factorZ
 
 @contextmanager
 def saveTime():
